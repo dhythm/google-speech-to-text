@@ -96,9 +96,37 @@ node dist/index.js audio.mp3 --key-file "$(base64 -i key.json)"
 
 ## 使い方
 
-### CLI での使用
+### ローカル開発環境での使用（TypeScript直接実行）
+
+開発時はビルド不要でTypeScriptファイルを直接実行できます：
 
 ```bash
+# npm scriptsを使用
+npm run speech-to-text audio.mp3
+npm run stt audio.mp3  # 短縮版
+
+# 動画ファイルから文字起こし
+npm run stt video.mp4 -- -o transcript.txt
+
+# 日本語での文字起こし（SRT字幕生成）
+npm run stt video.mp4 -- -l ja-JP -o subtitles.srt -f srt
+
+# ts-nodeを直接使用
+npx ts-node src/index.ts audio.mp3
+
+# 開発モード（ファイル監視付き）
+npm run dev audio.mp3
+
+# 実行可能スクリプトを使用
+./bin/speech-to-text audio.mp3
+```
+
+### プロダクション環境での使用（コンパイル済みJavaScript）
+
+```bash
+# ビルド
+npm run build
+
 # 基本的な使用方法
 node dist/index.js audio.mp3
 
@@ -222,8 +250,19 @@ gcloud auth application-default print-access-token
 
 ## 開発
 
+### ローカル開発のワークフロー
+
 ```bash
-# 開発モードで実行
+# 依存関係のインストール
+npm install
+
+# TypeScript直接実行（推奨）
+npm run stt audio.mp3 -o transcript.txt
+
+# または ts-node 直接使用
+npx ts-node src/index.ts audio.mp3
+
+# ファイル監視モード（開発中のテスト用）
 npm run dev
 
 # TypeScriptの型チェック
@@ -235,6 +274,32 @@ npm run lint
 # コードフォーマット
 npm run format
 ```
+
+### プロダクションビルド
+
+```bash
+# TypeScriptをJavaScriptにコンパイル
+npm run build
+
+# コンパイル済みファイルを実行
+npm start  # または node dist/index.js
+```
+
+### 開発のメリット
+
+- **高速な開発**: ビルド不要でTypeScriptを直接実行
+- **ホットリロード**: `npm run dev` でファイル変更を監視
+- **型安全性**: TypeScriptの型チェック
+- **統一されたツール**: 本番環境と同じCLIインターフェース
+
+### 注意事項
+
+ローカル開発でのTypeScript直接実行を可能にするため、以下のパッケージのバージョンを調整しています：
+
+- `chalk`: v4 (CommonJS版を使用)
+- `ora`: v5 (CommonJS版を使用)
+
+これにより、ts-nodeでの実行時にESモジュールの競合を回避しています。
 
 ## ライセンス
 

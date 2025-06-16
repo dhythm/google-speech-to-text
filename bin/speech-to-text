@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+
+// This is a development wrapper for running TypeScript directly
+require('ts-node').register({
+  transpileOnly: true,
+  compilerOptions: {
+    module: 'commonjs'
+  }
+});
+
+require('../src/index.ts');
