@@ -117,22 +117,111 @@ export class Transcriber {
     config: TranscriptionConfig,
     spinner: any
   ): Promise<TranscriptionResult> {
-    const results: TranscriptionResult[] = [];
+    const options = this.config.getProcessingOptions();
+    const maxConcurrent = options.maxConcurrentChunks || 3;
+    const results: (TranscriptionResult | null)[] = new Array(chunks.length).fill(null);
+    const failedChunks: number[] = [];
     
-    for (let i = 0; i < chunks.length; i++) {
-      if (spinner) spinner.text = `Transcribing chunk ${i + 1}/${chunks.length}...`;
+    if (options.verbose) {
+      console.log(chalk.blue(`Processing ${chunks.length} chunks with max ${maxConcurrent} parallel...`));
+    }
+
+    // Process chunks in batches with limited concurrency
+    for (let i = 0; i < chunks.length; i += maxConcurrent) {
+      const batch = chunks.slice(i, Math.min(i + maxConcurrent, chunks.length));
+      const batchIndices = Array.from({ length: batch.length }, (_, idx) => i + idx);
       
-      try {
-        const chunkResult = await this.provider.transcribeChunk(chunks[i], config);
-        results.push(chunkResult);
-      } catch (error) {
-        console.error(chalk.red(`Error transcribing chunk ${i + 1}: ${error}`));
-        // Continue with other chunks even if one fails
+      if (spinner) {
+        spinner.text = `Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(chunks.length / maxConcurrent)} (chunks ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)}/${chunks.length})`;
+      }
+      
+      const batchPromises = batch.map(async (chunk, batchIdx) => {
+        const chunkIndex = batchIndices[batchIdx];
+        try {
+          const startTime = Date.now();
+          const result = await this.provider.transcribeChunk(chunk, config);
+          const endTime = Date.now();
+          
+          if (options.verbose) {
+            const duration = ((endTime - startTime) / 1000).toFixed(1);
+            console.log(chalk.green(`✓ Chunk ${chunkIndex + 1} completed in ${duration}s`));
+          }
+          
+          return { index: chunkIndex, result };
+        } catch (error) {
+          console.error(chalk.red(`✗ Chunk ${chunkIndex + 1} failed: ${error}`));
+          failedChunks.push(chunkIndex);
+          return { index: chunkIndex, result: null };
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      
+      // Store results in correct positions
+      batchResults.forEach(({ index, result }) => {
+        results[index] = result;
+      });
+      
+      // Add small delay between batches to avoid rate limiting
+      if (i + maxConcurrent < chunks.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
-    // Merge results
-    return this.mergeResults(results);
+    // Retry failed chunks if enabled
+    if (options.retryFailedChunks && failedChunks.length > 0) {
+      console.log(chalk.yellow(`Retrying ${failedChunks.length} failed chunks...`));
+      await this.retryFailedChunks(chunks, failedChunks, config, results, options);
+    }
+
+    // Filter out null results and merge
+    const validResults = results.filter((result): result is TranscriptionResult => result !== null);
+    
+    if (validResults.length === 0) {
+      throw new Error('All chunks failed to transcribe');
+    }
+    
+    if (options.verbose) {
+      console.log(chalk.blue(`Successfully transcribed ${validResults.length}/${chunks.length} chunks`));
+    }
+
+    return this.mergeResults(validResults);
+  }
+
+  private async retryFailedChunks(
+    chunks: any[],
+    failedIndices: number[],
+    config: TranscriptionConfig,
+    results: (TranscriptionResult | null)[],
+    options: any
+  ): Promise<void> {
+    const maxRetries = options.maxRetries || 3;
+    
+    for (const chunkIndex of failedIndices) {
+      let retryCount = 0;
+      let success = false;
+      
+      while (retryCount < maxRetries && !success) {
+        try {
+          console.log(chalk.yellow(`Retrying chunk ${chunkIndex + 1} (attempt ${retryCount + 1}/${maxRetries})`));
+          
+          // Add exponential backoff delay
+          const delay = Math.pow(2, retryCount) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          const result = await this.provider.transcribeChunk(chunks[chunkIndex], config);
+          results[chunkIndex] = result;
+          success = true;
+          
+          console.log(chalk.green(`✓ Chunk ${chunkIndex + 1} succeeded on retry ${retryCount + 1}`));
+        } catch (error) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            console.error(chalk.red(`✗ Chunk ${chunkIndex + 1} failed after ${maxRetries} retries: ${error}`));
+          }
+        }
+      }
+    }
   }
 
   private mergeResults(results: TranscriptionResult[]): TranscriptionResult {

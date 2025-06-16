@@ -6,7 +6,9 @@
 
 - 🎥 動画ファイルからの音声抽出と文字起こし
 - 🎵 各種音声フォーマットのサポート (MP3, WAV, FLAC, M4A など)
-- 📝 長時間音声の自動分割処理
+- 📝 長時間音声の自動分割処理（30分〜数時間対応）
+- ⚡ 並列処理による高速化（最大5並列）
+- 🔄 失敗チャンクの自動再試行機能
 - 🌏 多言語対応
 - 📄 複数の出力フォーマット (JSON, TXT, SRT, VTT, CSV)
 - 🔧 柔軟な設定オプション
@@ -117,6 +119,9 @@ npx ts-node src/index.ts audio.mp3
 # 開発モード（ファイル監視付き）
 npm run dev audio.mp3
 
+# 長時間ファイル（並列処理）
+npm run stt long-audio.mp3 -- --max-concurrent 5 -v
+
 # 実行可能スクリプトを使用
 ./bin/speech-to-text audio.mp3
 ```
@@ -149,6 +154,34 @@ node dist/index.js --help
 node dist/index.js examples
 ```
 
+## 長時間ファイルの処理
+
+30分〜数時間の長時間ファイルも効率的に処理できます：
+
+### 自動チャンク分割
+- **59秒以上のファイル**: 自動的に59秒のチャンクに分割
+- **オーバーラップ**: 1秒のオーバーラップで音声の途切れを防止
+- **自動マージ**: 分割されたチャンクの結果を自動的に結合
+
+### 並列処理オプション
+```bash
+# 30分ファイル（約31チャンク）の場合
+npm run stt 30min-audio.mp3 -- --max-concurrent 3 -v
+
+# 1時間ファイル（約62チャンク）で高速処理
+npm run stt 1hour-audio.mp3 -- --max-concurrent 5 -v
+
+# 失敗時の再試行を無効化
+npm run stt long-audio.mp3 -- --no-retry
+```
+
+### 処理時間の目安
+| ファイル長 | チャンク数 | 処理時間（3並列） | 処理時間（5並列） |
+|------------|------------|-------------------|-------------------|
+| 30分       | 31個       | 約2-3分           | 約1-2分           |
+| 1時間      | 62個       | 約4-6分           | 約3-4分           |
+| 2時間      | 124個      | 約8-12分          | 約6-8分           |
+
 ### プログラマティックな使用
 
 ```typescript
@@ -158,7 +191,7 @@ import { TranscriptionConfig } from './dist/types';
 // トランスクライバーの初期化
 const transcriber = new Transcriber('google-speech');
 
-// 設定
+// 設定（長時間ファイル用）
 const config: TranscriptionConfig = {
   provider: 'google-speech',
   languageCode: 'ja-JP',
@@ -166,8 +199,18 @@ const config: TranscriptionConfig = {
   enableWordTimeOffsets: true,
 };
 
-// 文字起こしの実行
-const result = await transcriber.transcribeFile('audio.mp3', config);
+const processingOptions = {
+  maxConcurrentChunks: 5,  // 並列処理数
+  retryFailedChunks: true, // 再試行有効
+  verbose: true,           // 詳細ログ
+};
+
+// 長時間ファイルの文字起こし
+const result = await transcriber.transcribeFile(
+  'long-audio.mp3', 
+  config, 
+  processingOptions
+);
 console.log(result.transcript);
 ```
 

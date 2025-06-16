@@ -129,6 +129,9 @@ export interface ProcessingOptions {
   outputPath?: string;
   tempDir?: string;
   verbose?: boolean;
+  maxConcurrentChunks?: number; // parallel processing limit
+  retryFailedChunks?: boolean;
+  maxRetries?: number;
 }
 
 export enum OutputFormat {
@@ -155,6 +158,8 @@ export interface CLIOptions {
   config?: string;
   verbose?: boolean;
   chunkDuration?: number;
+  maxConcurrent?: number;
+  noRetry?: boolean;
   projectId?: string;
   location?: string;
   keyFile?: string;

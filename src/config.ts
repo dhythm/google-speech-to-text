@@ -44,6 +44,9 @@ export class Config {
       outputFormat: undefined,
       tempDir: path.join(process.cwd(), '.temp'),
       verbose: false,
+      maxConcurrentChunks: 3, // parallel processing limit
+      retryFailedChunks: true,
+      maxRetries: 3,
     };
   }
 

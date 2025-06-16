@@ -23,6 +23,8 @@ program
   .option('-f, --format <format>', 'Output format (json, txt, srt, vtt, csv)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('--chunk-duration <seconds>', 'Duration of audio chunks in seconds', '59')
+  .option('--max-concurrent <number>', 'Maximum concurrent chunk processing', '3')
+  .option('--no-retry', 'Disable retry of failed chunks')
   .option('--project-id <id>', 'Google Cloud project ID')
   .option('--location <location>', 'Google Cloud location', 'us-central1')
   .option('--key-file <path>', 'Google Cloud service account key (file path or base64-encoded JSON)')
@@ -71,6 +73,8 @@ program
       const processingOptions = {
         ...config.getProcessingOptions(),
         chunkDuration: parseInt(String(options.chunkDuration || '59')),
+        maxConcurrentChunks: parseInt(String(options.maxConcurrent || '3')),
+        retryFailedChunks: !options.noRetry,
         verbose: options.verbose,
         outputPath: options.output,
         outputFormat: options.format as OutputFormat,
@@ -158,7 +162,10 @@ program
     console.log(chalk.white('\n6. With base64-encoded credentials:'));
     console.log(chalk.gray('   speech-to-text audio.mp3 --key-file "$(base64 -i key.json)"'));
     
-    console.log(chalk.white('\n7. Using config file:'));
+    console.log(chalk.white('\n7. Long file with parallel processing:'));
+    console.log(chalk.gray('   speech-to-text long-audio.mp3 --max-concurrent 5 -v'));
+    
+    console.log(chalk.white('\n8. Using config file:'));
     console.log(chalk.gray('   speech-to-text audio.mp3 -c config.json'));
   });
 
@@ -191,6 +198,9 @@ program
       processing: {
         chunkDuration: 59,
         overlap: 1,
+        maxConcurrentChunks: 3,
+        retryFailedChunks: true,
+        maxRetries: 3,
         outputFormat: 'txt',
         verbose: false
       }
