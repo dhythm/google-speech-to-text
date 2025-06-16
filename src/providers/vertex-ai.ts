@@ -1,4 +1,4 @@
-import { PredictionServiceClient } from '@google-cloud/aiplatform';
+import { SpeechClient } from '@google-cloud/speech';
 import * as fs from 'fs';
 import {
   TranscriptionConfig,
@@ -9,54 +9,47 @@ import {
   AudioEncoding,
 } from '../types';
 import { Config } from '../config';
+import { AuthHelper } from '../utils/auth';
 
 export class VertexAISpeechProvider implements TranscriptionProvider {
   name = 'Vertex AI Speech';
-  private client: PredictionServiceClient;
+  private client: SpeechClient;
   private config: Config;
-  private project: string;
-  private location: string;
-  private endpointId: string;
 
   constructor() {
     this.config = Config.getInstance();
+    const googleConfig = this.config.getGoogleCloudConfig();
     const vertexConfig = this.config.getVertexAIConfig();
     
-    this.project = vertexConfig.project || '';
-    this.location = vertexConfig.location || 'us-central1';
-    this.endpointId = process.env.VERTEX_AI_SPEECH_ENDPOINT_ID || '';
-
-    const options: any = {};
+    // Use Vertex AI endpoint if specified, otherwise use standard Speech API
+    // Note: Vertex AI Speech often uses the same endpoints as Google Cloud Speech-to-Text
+    const clientConfig: any = {
+      ...googleConfig,
+      projectId: vertexConfig.project || googleConfig.projectId,
+    };
+    
+    // Only set custom endpoint if explicitly specified
     if (vertexConfig.apiEndpoint) {
-      options.apiEndpoint = vertexConfig.apiEndpoint;
+      clientConfig.apiEndpoint = vertexConfig.apiEndpoint;
     }
-
-    this.client = new PredictionServiceClient(options);
+    
+    this.client = new SpeechClient(clientConfig);
   }
 
   async transcribe(audioPath: string, config: TranscriptionConfig): Promise<TranscriptionResult> {
     this.validateConfig(config);
 
-    const audioContent = fs.readFileSync(audioPath);
-    const audioBytes = audioContent.toString('base64');
-
-    const instance = {
-      content: audioBytes,
-      mimeType: this.getMimeType(config.encoding),
-    };
-
-    const parameters = this.buildParameters(config);
-
-    const endpoint = `projects/${this.project}/locations/${this.location}/endpoints/${this.endpointId}`;
+    const audioBytes = fs.readFileSync(audioPath).toString('base64');
 
     const request = {
-      endpoint,
-      instances: [{ structValue: { fields: this.objectToValue(instance) } }],
-      parameters: { structValue: { fields: this.objectToValue(parameters) } },
+      audio: {
+        content: audioBytes,
+      },
+      config: this.buildRecognitionConfig(config),
     };
 
     try {
-      const [response] = await this.client.predict(request);
+      const [response] = await this.client.recognize(request);
       return this.processResponse(response);
     } catch (error) {
       throw new Error(`Vertex AI Speech transcription failed: ${error}`);
@@ -68,23 +61,15 @@ export class VertexAISpeechProvider implements TranscriptionProvider {
 
     const audioBytes = chunk.buffer.toString('base64');
 
-    const instance = {
-      content: audioBytes,
-      mimeType: this.getMimeType(config.encoding),
-    };
-
-    const parameters = this.buildParameters(config);
-
-    const endpoint = `projects/${this.project}/locations/${this.location}/endpoints/${this.endpointId}`;
-
     const request = {
-      endpoint,
-      instances: [{ structValue: { fields: this.objectToValue(instance) } }],
-      parameters: { structValue: { fields: this.objectToValue(parameters) } },
+      audio: {
+        content: audioBytes,
+      },
+      config: this.buildRecognitionConfig(config),
     };
 
     try {
-      const [response] = await this.client.predict(request);
+      const [response] = await this.client.recognize(request);
       const result = this.processResponse(response);
       
       // Adjust timestamps based on chunk offset
@@ -102,58 +87,60 @@ export class VertexAISpeechProvider implements TranscriptionProvider {
     }
   }
 
-  private buildParameters(config: TranscriptionConfig): any {
-    const parameters: any = {
+  private buildRecognitionConfig(config: TranscriptionConfig): any {
+    const recognitionConfig: any = {
+      encoding: this.mapEncoding(config.encoding),
+      sampleRateHertz: config.sampleRateHertz || 16000,
       languageCode: config.languageCode,
+      enableWordTimeOffsets: config.enableWordTimeOffsets,
+      enableAutomaticPunctuation: config.enableAutomaticPunctuation,
+      enableWordConfidence: config.enableWordConfidence,
       maxAlternatives: config.maxAlternatives || 1,
-      enableWordTimeOffsets: config.enableWordTimeOffsets || false,
-      enableWordConfidence: config.enableWordConfidence || false,
-      enableAutomaticPunctuation: config.enableAutomaticPunctuation || false,
-      profanityFilter: config.profanityFilter || false,
+      profanityFilter: config.profanityFilter,
+      model: config.model,
+      useEnhanced: config.useEnhanced,
     };
 
-    if (config.model) {
-      parameters.model = config.model;
-    }
-
     if (config.speechContexts) {
-      parameters.speechContexts = config.speechContexts;
+      recognitionConfig.speechContexts = config.speechContexts;
     }
 
     if (config.diarizationConfig) {
-      parameters.enableSpeakerDiarization = config.diarizationConfig.enableSpeakerDiarization;
-      if (config.diarizationConfig.minSpeakerCount) {
-        parameters.minSpeakerCount = config.diarizationConfig.minSpeakerCount;
-      }
-      if (config.diarizationConfig.maxSpeakerCount) {
-        parameters.maxSpeakerCount = config.diarizationConfig.maxSpeakerCount;
-      }
+      recognitionConfig.diarizationConfig = {
+        enableSpeakerDiarization: config.diarizationConfig.enableSpeakerDiarization,
+        minSpeakerCount: config.diarizationConfig.minSpeakerCount,
+        maxSpeakerCount: config.diarizationConfig.maxSpeakerCount,
+      };
     }
 
-    return parameters;
+    if (config.metadata) {
+      recognitionConfig.metadata = config.metadata;
+    }
+
+    return recognitionConfig;
   }
 
-  private getMimeType(encoding?: AudioEncoding): string {
-    const mimeTypeMap: Record<AudioEncoding, string> = {
-      [AudioEncoding.ENCODING_UNSPECIFIED]: 'audio/wav',
-      [AudioEncoding.LINEAR16]: 'audio/wav',
-      [AudioEncoding.FLAC]: 'audio/flac',
-      [AudioEncoding.MULAW]: 'audio/basic',
-      [AudioEncoding.AMR]: 'audio/amr',
-      [AudioEncoding.AMR_WB]: 'audio/amr-wb',
-      [AudioEncoding.OGG_OPUS]: 'audio/ogg',
-      [AudioEncoding.SPEEX_WITH_HEADER_BYTE]: 'audio/speex',
-      [AudioEncoding.MP3]: 'audio/mp3',
-      [AudioEncoding.WEBM_OPUS]: 'audio/webm',
+  private mapEncoding(encoding?: AudioEncoding): string {
+    const encodingMap: Record<AudioEncoding, string> = {
+      [AudioEncoding.ENCODING_UNSPECIFIED]: 'ENCODING_UNSPECIFIED',
+      [AudioEncoding.LINEAR16]: 'LINEAR16',
+      [AudioEncoding.FLAC]: 'FLAC',
+      [AudioEncoding.MULAW]: 'MULAW',
+      [AudioEncoding.AMR]: 'AMR',
+      [AudioEncoding.AMR_WB]: 'AMR_WB',
+      [AudioEncoding.OGG_OPUS]: 'OGG_OPUS',
+      [AudioEncoding.SPEEX_WITH_HEADER_BYTE]: 'SPEEX_WITH_HEADER_BYTE',
+      [AudioEncoding.MP3]: 'MP3',
+      [AudioEncoding.WEBM_OPUS]: 'WEBM_OPUS',
     };
 
-    return mimeTypeMap[encoding || AudioEncoding.LINEAR16];
+    return encodingMap[encoding || AudioEncoding.LINEAR16];
   }
 
   private processResponse(response: any): TranscriptionResult {
-    const predictions = response.predictions || [];
+    const results = response.results || [];
     
-    if (predictions.length === 0) {
+    if (results.length === 0) {
       return {
         transcript: '',
         words: [],
@@ -161,87 +148,59 @@ export class VertexAISpeechProvider implements TranscriptionProvider {
       };
     }
 
-    const prediction = predictions[0];
-    const structValue = prediction.structValue || prediction;
-    const fields = structValue.fields || {};
-
-    const transcript = this.getStringValue(fields.transcript);
-    const confidence = this.getNumberValue(fields.confidence);
+    const primaryResult = results[0];
+    const primaryAlternative = primaryResult.alternatives?.[0] || {};
 
     const words: WordInfo[] = [];
-    const wordsArray = this.getListValue(fields.words);
-    
-    if (wordsArray) {
-      wordsArray.forEach((wordObj: any) => {
-        const wordFields = wordObj.structValue?.fields || {};
+    const alternatives: any[] = [];
+
+    // Process words with timestamps
+    if (primaryAlternative.words) {
+      primaryAlternative.words.forEach((word: any) => {
         words.push({
-          word: this.getStringValue(wordFields.word),
-          startTime: this.getNumberValue(wordFields.startTime),
-          endTime: this.getNumberValue(wordFields.endTime),
-          confidence: this.getNumberValue(wordFields.confidence),
-          speakerTag: this.getNumberValue(wordFields.speakerTag),
+          word: word.word,
+          startTime: this.timeToSeconds(word.startTime),
+          endTime: this.timeToSeconds(word.endTime),
+          confidence: word.confidence,
+          speakerTag: word.speakerTag,
         });
       });
     }
 
-    const alternatives: any[] = [];
-    const alternativesArray = this.getListValue(fields.alternatives);
-    
-    if (alternativesArray && alternativesArray.length > 1) {
-      alternativesArray.slice(1).forEach((altObj: any) => {
-        const altFields = altObj.structValue?.fields || {};
+    // Process alternatives
+    primaryResult.alternatives?.forEach((alt: any, index: number) => {
+      if (index > 0) { // Skip the primary alternative
         alternatives.push({
-          transcript: this.getStringValue(altFields.transcript),
-          confidence: this.getNumberValue(altFields.confidence),
+          transcript: alt.transcript,
+          confidence: alt.confidence,
+          words: alt.words?.map((word: any) => ({
+            word: word.word,
+            startTime: this.timeToSeconds(word.startTime),
+            endTime: this.timeToSeconds(word.endTime),
+            confidence: word.confidence,
+          })),
         });
-      });
-    }
+      }
+    });
+
+    // Combine all results for full transcript
+    const fullTranscript = results
+      .map((result: any) => result.alternatives?.[0]?.transcript || '')
+      .join(' ')
+      .trim();
 
     return {
-      transcript,
+      transcript: fullTranscript,
       words,
       alternatives,
-      confidence,
-      languageCode: this.getStringValue(fields.languageCode),
+      confidence: primaryAlternative.confidence,
+      languageCode: response.results?.[0]?.languageCode,
     };
   }
 
-  private objectToValue(obj: any): any {
-    const fields: any = {};
-    
-    for (const [key, value] of Object.entries(obj)) {
-      if (value === null || value === undefined) continue;
-      
-      if (typeof value === 'string') {
-        fields[key] = { stringValue: value };
-      } else if (typeof value === 'number') {
-        fields[key] = { numberValue: value };
-      } else if (typeof value === 'boolean') {
-        fields[key] = { boolValue: value };
-      } else if (Array.isArray(value)) {
-        fields[key] = { 
-          listValue: { 
-            values: value.map(v => this.objectToValue({ value: v }).value) 
-          } 
-        };
-      } else if (typeof value === 'object') {
-        fields[key] = { structValue: { fields: this.objectToValue(value) } };
-      }
-    }
-    
-    return fields;
-  }
-
-  private getStringValue(field: any): string {
-    return field?.stringValue || '';
-  }
-
-  private getNumberValue(field: any): number {
-    return field?.numberValue || 0;
-  }
-
-  private getListValue(field: any): any[] {
-    return field?.listValue?.values || [];
+  private timeToSeconds(time: any): number {
+    if (!time) return 0;
+    return Number(time.seconds || 0) + Number(time.nanos || 0) / 1e9;
   }
 
   validateConfig(config: TranscriptionConfig): void {
@@ -249,12 +208,22 @@ export class VertexAISpeechProvider implements TranscriptionProvider {
       throw new Error('Language code is required for Vertex AI Speech');
     }
 
-    if (!this.project) {
-      throw new Error('Vertex AI project is not configured. Set VERTEX_AI_PROJECT_ID or GOOGLE_CLOUD_PROJECT_ID environment variable.');
+    const googleConfig = this.config.getGoogleCloudConfig();
+    const vertexConfig = this.config.getVertexAIConfig();
+    
+    if (!vertexConfig.project && !googleConfig.projectId) {
+      throw new Error('Project ID is not configured. Set VERTEX_AI_PROJECT_ID or GOOGLE_CLOUD_PROJECT_ID environment variable.');
     }
 
-    if (!this.endpointId) {
-      throw new Error('Vertex AI Speech endpoint ID is not configured. Set VERTEX_AI_SPEECH_ENDPOINT_ID environment variable.');
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      throw new Error('Google Cloud credentials are not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable.');
+    }
+    
+    // Validate credentials
+    try {
+      AuthHelper.validateServiceAccountKey(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    } catch (error) {
+      throw new Error(`Invalid Google Cloud credentials: ${error}`);
     }
   }
 }

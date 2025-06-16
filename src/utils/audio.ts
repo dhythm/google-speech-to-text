@@ -19,7 +19,15 @@ export class AudioProcessor {
     const isVideo = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'].includes(ext);
     
     if (!isVideo && ['.wav', '.mp3', '.flac', '.m4a', '.aac'].includes(ext)) {
-      // Already an audio file, but might need conversion
+      // For MP3 files, always convert to WAV for better compatibility
+      if (ext === '.mp3') {
+        const tempDir = this.config.getProcessingOptions().tempDir || '.temp';
+        this.config.ensureTempDir();
+        const wavOutput = outputPath || path.join(tempDir, `audio_${Date.now()}.wav`);
+        return this.convertAudio(inputPath, wavOutput, AudioEncoding.LINEAR16);
+      }
+      
+      // For other audio files, convert if output path is specified
       if (outputPath && outputPath !== inputPath) {
         return this.convertAudio(inputPath, outputPath);
       }
@@ -169,6 +177,28 @@ export class AudioProcessor {
 
   cleanupTempFiles(): void {
     this.config.cleanupTempDir();
+  }
+
+  /**
+   * Detects the appropriate AudioEncoding based on file extension
+   */
+  detectEncoding(filePath: string): AudioEncoding {
+    const ext = path.extname(filePath).toLowerCase();
+    
+    switch (ext) {
+      case '.wav':
+        return AudioEncoding.LINEAR16;
+      case '.mp3':
+        return AudioEncoding.MP3;
+      case '.flac':
+        return AudioEncoding.FLAC;
+      case '.ogg':
+        return AudioEncoding.OGG_OPUS;
+      case '.webm':
+        return AudioEncoding.WEBM_OPUS;
+      default:
+        return AudioEncoding.LINEAR16; // Default to LINEAR16
+    }
   }
 
   async validateAudioFile(audioPath: string): Promise<void> {

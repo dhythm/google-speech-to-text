@@ -53,11 +53,18 @@ export class Transcriber {
       if (spinner) spinner.text = 'Extracting and converting audio...';
       const audioPath = await this.audioProcessor.extractAudio(inputPath);
 
+      // Detect and set appropriate encoding
+      const detectedEncoding = this.audioProcessor.detectEncoding(audioPath);
+      transcriptionConfig.encoding = detectedEncoding;
+      transcriptionConfig.sampleRateHertz = 16000; // Ensure sample rate is set
+
       // Get audio duration
       const duration = await this.audioProcessor.getAudioDuration(audioPath);
       
       if (options.verbose) {
-        console.log(chalk.blue(`\nAudio duration: ${this.formatDuration(duration)}`));
+        console.log(chalk.blue(`\nAudio file: ${audioPath}`));
+        console.log(chalk.blue(`Audio encoding: ${detectedEncoding}`));
+        console.log(chalk.blue(`Audio duration: ${this.formatDuration(duration)}`));
       }
 
       let result: TranscriptionResult;
