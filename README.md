@@ -38,8 +38,14 @@ npm run build
 ### 1. Google Cloud の設定
 
 ```bash
+# Google Cloud への認証
+gcloud auth login --update-adc
+
 # Google Cloud プロジェクトの作成
 gcloud projects create YOUR_PROJECT_ID
+# or
+# Google Cloud プロジェクトの設定
+gcloud config set project YOUR_PROJECT_ID
 
 # Speech-to-Text API の有効化
 gcloud services enable speech.googleapis.com

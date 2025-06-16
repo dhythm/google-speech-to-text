@@ -45,7 +45,7 @@ coverage/
 .nyc_output/
 
 # Audio/Video test files
-*.mp3
+# *.mp3
 *.wav
 *.mp4
 *.avi
