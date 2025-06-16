@@ -2,6 +2,7 @@ import { TranscriptionConfig, ProcessingOptions, AudioEncoding } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { AuthHelper } from './utils/auth';
 
 dotenv.config();
 
@@ -80,9 +81,12 @@ export class Config {
   }
 
   getGoogleCloudConfig() {
+    const credentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    const credentialConfig = AuthHelper.getCredentialConfig(credentials);
+    
     return {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GCLOUD_PROJECT,
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      ...credentialConfig,
       location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
     };
   }

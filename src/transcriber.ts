@@ -14,6 +14,7 @@ import { Config } from './config';
 import { AudioProcessor } from './utils/audio';
 import { GoogleSpeechProvider } from './providers/google-speech';
 import { VertexAISpeechProvider } from './providers/vertex-ai';
+import { AuthHelper } from './utils/auth';
 
 export class Transcriber {
   private config: Config;
@@ -93,11 +94,13 @@ export class Transcriber {
 
       // Cleanup temporary files
       this.audioProcessor.cleanupTempFiles();
+      AuthHelper.cleanup();
 
       return result;
     } catch (error) {
       spinner?.fail('Transcription failed');
       this.audioProcessor.cleanupTempFiles();
+      AuthHelper.cleanup();
       throw error;
     }
   }

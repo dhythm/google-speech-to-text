@@ -10,6 +10,7 @@ import {
   AudioEncoding,
 } from '../types';
 import { Config } from '../config';
+import { AuthHelper } from '../utils/auth';
 
 export class GoogleSpeechProvider implements TranscriptionProvider {
   name = 'Google Cloud Speech-to-Text';
@@ -232,8 +233,15 @@ export class GoogleSpeechProvider implements TranscriptionProvider {
       throw new Error('Google Cloud project ID is not configured. Set GOOGLE_CLOUD_PROJECT_ID environment variable.');
     }
 
-    if (!googleConfig.keyFilename) {
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       throw new Error('Google Cloud credentials are not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable.');
+    }
+    
+    // Validate credentials
+    try {
+      AuthHelper.validateServiceAccountKey(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    } catch (error) {
+      throw new Error(`Invalid Google Cloud credentials: ${error}`);
     }
   }
 }

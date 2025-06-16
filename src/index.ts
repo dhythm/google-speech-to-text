@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import { Transcriber } from './transcriber';
 import { Config } from './config';
 import { TranscriptionConfig, OutputFormat, CLIOptions } from './types';
+import { AuthHelper } from './utils/auth';
 
 const program = new Command();
 
@@ -24,7 +25,7 @@ program
   .option('--chunk-duration <seconds>', 'Duration of audio chunks in seconds', '59')
   .option('--project-id <id>', 'Google Cloud project ID')
   .option('--location <location>', 'Google Cloud location', 'us-central1')
-  .option('--key-file <path>', 'Path to Google Cloud service account key file')
+  .option('--key-file <path>', 'Google Cloud service account key (file path or base64-encoded JSON)')
   .option('-v, --verbose', 'Enable verbose output')
   .action(async (input: string, options: CLIOptions) => {
     try {
@@ -44,9 +45,7 @@ program
         process.env.VERTEX_AI_LOCATION = options.location;
       }
       if (options.keyFile) {
-        if (!fs.existsSync(options.keyFile)) {
-          throw new Error(`Key file not found: ${options.keyFile}`);
-        }
+        // Support both file path and base64-encoded credentials
         process.env.GOOGLE_APPLICATION_CREDENTIALS = options.keyFile;
       }
 
@@ -128,6 +127,9 @@ program
       }
 
       process.exit(1);
+    } finally {
+      // Clean up any temporary credential files
+      AuthHelper.cleanup();
     }
   });
 
@@ -150,10 +152,13 @@ program
     console.log(chalk.white('\n4. Generate SRT subtitles:'));
     console.log(chalk.gray('   speech-to-text video.mp4 -o subtitles.srt -f srt'));
     
-    console.log(chalk.white('\n5. With Google Cloud credentials:'));
+    console.log(chalk.white('\n5. With Google Cloud credentials (file):'));
     console.log(chalk.gray('   speech-to-text audio.mp3 --project-id my-project --key-file ./key.json'));
     
-    console.log(chalk.white('\n6. Using config file:'));
+    console.log(chalk.white('\n6. With base64-encoded credentials:'));
+    console.log(chalk.gray('   speech-to-text audio.mp3 --key-file "$(base64 -i key.json)"'));
+    
+    console.log(chalk.white('\n7. Using config file:'));
     console.log(chalk.gray('   speech-to-text audio.mp3 -c config.json'));
   });
 

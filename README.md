@@ -64,7 +64,28 @@ cp .env.example .env
 
 # .env ファイルを編集
 # GOOGLE_CLOUD_PROJECT_ID=your-project-id
+
+# 認証情報の設定（以下のいずれか）:
+# 方法1: ファイルパス
 # GOOGLE_APPLICATION_CREDENTIALS=./credentials.json
+
+# 方法2: Base64エンコードされた認証情報（推奨）
+# GOOGLE_APPLICATION_CREDENTIALS=$(base64 -i credentials.json)
+```
+
+#### Base64エンコードされた認証情報の使用方法
+
+本アプリケーションは、より安全な方法として、Base64エンコードされた認証情報をサポートしています：
+
+```bash
+# 認証情報をBase64エンコード
+export GOOGLE_APPLICATION_CREDENTIALS=$(base64 -i service-account-key.json)
+
+# または.envファイルに保存
+echo "GOOGLE_APPLICATION_CREDENTIALS=$(base64 -i service-account-key.json)" >> .env
+
+# CLIで直接指定
+node dist/index.js audio.mp3 --key-file "$(base64 -i key.json)"
 ```
 
 ## 使い方
